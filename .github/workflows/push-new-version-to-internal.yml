@@ -1,4 +1,4 @@
-workflow name: Push new version to Internal
+name: Push new version to Internal
 
 on:
   workflow_dispatch:
@@ -15,8 +15,8 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           mkdir -p build_output
-          gh release download 2.0.0 \
-            --pattern "Tap.Shoot.Win_2.aab" \
+          gh release download 2.0.0 \ #TAG OF VERSION FROM RELEASES
+            --pattern "*Tap.Shoot.Win_2.aab" \
             --dir build_output
 
       - name: Setup Ruby
@@ -32,4 +32,4 @@ jobs:
           GOOGLE_PLAY_JSON_KEY: ${{ secrets.GOOGLE_PLAY_JSON_KEY }}
         run: |
           export GOOGLE_PLAY_JSON_KEY="$(echo "$GOOGLE_PLAY_JSON_KEY")"
-          fastlane android upload_to_internal
+          fastlane android upload_to_alpha
