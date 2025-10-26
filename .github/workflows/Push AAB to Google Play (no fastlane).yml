@@ -1,0 +1,66 @@
+name: Push AAB to Google Play (no fastlane)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to download'
+        required: true
+        default: '2.0.0'
+      asset_name:
+        description: 'AAB filename in release (exact name)'
+        required: true
+        default: 'Tap.Shoot.Win_2.aab'
+      package_name:
+        description: 'Android package name'
+        required: true
+        default: 'com.tapshootwin.basketball'
+      track:
+        description: 'Play Store track'
+        required: true
+        default: 'internal'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_JSON_KEY }} # JSON content of service account key
+      PACKAGE_NAME: ${{ github.event.inputs.package_name }}
+      TRACK: ${{ github.event.inputs.track }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Install GitHub CLI (for downloading release assets)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gh
+
+      - name: Download AAB from GitHub Release
+        shell: bash
+        run: |
+          mkdir -p build_output
+          gh release download "${{ github.event.inputs.tag }}" \
+            --pattern "${{ github.event.inputs.asset_name }}" \
+            --dir build_output
+          echo "Downloaded files:"
+          ls -la build_output || true
+
+      - name: Verify AAB exists
+        shell: bash
+        run: |
+          if ! test -f "build_output/${{ github.event.inputs.asset_name }}"; then
+            echo "AAB not found: build_output/${{ github.event.inputs.asset_name }}"
+            exit 1
+          fi
+          echo "AAB found."
+
+      - name: Upload to Google Play (community action)
+        uses: r0adkll/upload-google-play@v1
+        with:
+          # serviceAccountJson: полный JSON ключ (вставится из secret автоматически)
+          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_JSON_KEY }}
+          packageName: ${{ env.PACKAGE_NAME }}
+          releaseFile: build_output/${{ github.event.inputs.asset_name }}
+          track: ${{ env.TRACK }}
