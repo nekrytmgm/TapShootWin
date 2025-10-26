@@ -1,0 +1,131 @@
+name: Push new version to Internal (debug)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to download'
+        required: true
+        default: '2.0.0'
+      asset_pattern:
+        description: 'Filename or glob for the AAB asset'
+        required: true
+        default: 'Tap.Shoot.Win_2.aab'
+      package_name:
+        description: 'Android package name (applicationId)'
+        required: true
+        default: 'com.tapshootwin.basketball'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GOOGLE_PLAY_JSON_KEY: ${{ secrets.GOOGLE_PLAY_JSON_KEY }}
+      CI: "true"
+      FASTLANE_SKIP_UPDATE_CHECK: "true"
+      FASTLANE_OPT_OUT_USAGE: "true"
+      FASTLANE_DISABLE_COLORS: "true"
+      FASTLANE_NON_INTERACTIVE: "true"
+      PACKAGE_NAME: ${{ github.event.inputs.package_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Install GitHub CLI
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y gh
+
+      - name: Download AAB from GitHub Release
+        shell: bash
+        run: |
+          mkdir -p build_output
+          gh release download "${{ github.event.inputs.tag }}" \
+            --pattern "${{ github.event.inputs.asset_pattern }}" \
+            --dir build_output
+
+      - name: Ensure AAB was downloaded
+        shell: bash
+        run: |
+          echo "WORKSPACE = $GITHUB_WORKSPACE"
+          echo "Listing repo root:"
+          ls -la .
+          echo "Listing build_output:"
+          ls -la build_output || true
+          if ! ls build_output/*.aab >/dev/null 2>&1; then
+            echo "No AAB found in build_output — check the tag and asset_pattern"
+            exit 1
+          fi
+          echo "AAB found:"
+          ls -la build_output/*.aab
+
+      - name: Create minimal fastlane/Fastfile
+        shell: bash
+        run: |
+          mkdir -p fastlane
+          cat > fastlane/Fastfile <<'FASTFILE'
+default_platform(:android)
+
+platform :android do
+  desc "Upload AAB from build_output to alpha using GOOGLE_PLAY_JSON_KEY"
+  lane :upload_to_alpha do
+    aab_path = Dir["build_output/*.aab"].first
+    if aab_path.nil?
+      UI.user_error!("No AAB found in build_output. Make sure the download step succeeded.")
+    end
+
+    supply(
+      aab: aab_path,
+      track: "alpha",
+      package_name: ENV["PACKAGE_NAME"],
+      json_key_data: ENV["GOOGLE_PLAY_JSON_KEY"]
+    )
+  end
+end
+FASTFILE
+          echo "Fastfile created."
+
+      - name: Debug: show workspace, fastlane dir and Fastfile
+        shell: bash
+        run: |
+          echo "pwd:"
+          pwd
+          echo ""
+          echo "ls -la (repo root):"
+          ls -la
+          echo ""
+          echo "ls -la fastlane:"
+          ls -la fastlane || true
+          echo ""
+          echo "cat fastlane/Fastfile:"
+          sed -n '1,200p' fastlane/Fastfile || true
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 3.1
+
+      - name: Install Fastlane
+        run: |
+          gem install fastlane -v ">= 2.200" --no-document
+          echo "fastlane version:"
+          fastlane --version || true
+          echo "ruby version:"
+          ruby -v
+
+      - name: Run Fastlane uploading (verbose)
+        shell: bash
+        env:
+          PACKAGE_NAME: ${{ github.event.inputs.package_name }}
+          GOOGLE_PLAY_JSON_KEY: ${{ secrets.GOOGLE_PLAY_JSON_KEY }}
+        run: |
+          echo "Before running fastlane, show fastlane folder again:"
+          ls -la fastlane || true
+          echo "Show Fastfile content:"
+          sed -n '1,200p' fastlane/Fastfile || true
+          echo "Running fastlane (verbose):"
+          set -x
+          fastlane --verbose android upload_to_alpha
+          set +x
