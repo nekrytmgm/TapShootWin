@@ -1,15 +1,18 @@
-fastlane platform :android do
-  lane :upload_to_internal do
+default_platform(:android)
+
+platform :android do
+  desc "Upload first AAB from build_output to alpha using GOOGLE_PLAY_JSON_KEY and PACKAGE_NAME"
+  lane :upload_to_alpha do
+    aab_path = Dir["build_output/*.aab"].first
+    if aab_path.nil?
+      UI.user_error!("No AAB found in build_output. Make sure the download step succeeded.")
+    end
+
     supply(
-      json_key_data: ENV["GOOGLE_PLAY_JSON_KEY"], # або замість ENV — просто шлях до створеного JSON-файлу з ключем від Google Cloud Console
-      package_name: "com.tapshootwin.basketball",       # Bundle-ID створеного в консолі андроїд додатку
-      aab: "build_output/Tap.Shoot.Win_2.aab", # шлях до aab після завантаження його туди у workflow з GitHub Releases
-      track: "internal",
-      release_status: "draft",                 # обов’язково, щоб реліз став видимий
-      skip_upload_changelogs: false,
-      skip_upload_images: true,
-      skip_upload_screenshots: true,
-      skip_upload_metadata: true
+      aab: aab_path,
+      track: "alpha",
+      package_name: ENV["PACKAGE_NAME"],
+      json_key_data: ENV["GOOGLE_PLAY_JSON_KEY"]
     )
   end
 end
