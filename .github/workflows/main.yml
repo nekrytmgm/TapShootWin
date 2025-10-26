@@ -1,4 +1,4 @@
-name: Push new version to Internal (debug)
+name: Push new version to Internal
 
 on:
   workflow_dispatch:
@@ -26,7 +26,6 @@ jobs:
       FASTLANE_SKIP_UPDATE_CHECK: "true"
       FASTLANE_OPT_OUT_USAGE: "true"
       FASTLANE_DISABLE_COLORS: "true"
-      FASTLANE_NON_INTERACTIVE: "true"
       PACKAGE_NAME: ${{ github.event.inputs.package_name }}
 
     steps:
@@ -49,9 +48,6 @@ jobs:
       - name: Ensure AAB was downloaded
         shell: bash
         run: |
-          echo "WORKSPACE = $GITHUB_WORKSPACE"
-          echo "Listing repo root:"
-          ls -la .
           echo "Listing build_output:"
           ls -la build_output || true
           if ! ls build_output/*.aab >/dev/null 2>&1; then
@@ -85,22 +81,6 @@ platform :android do
   end
 end
 FASTFILE
-          echo "Fastfile created."
-
-      - name: Debug: show workspace, fastlane dir and Fastfile
-        shell: bash
-        run: |
-          echo "pwd:"
-          pwd
-          echo ""
-          echo "ls -la (repo root):"
-          ls -la
-          echo ""
-          echo "ls -la fastlane:"
-          ls -la fastlane || true
-          echo ""
-          echo "cat fastlane/Fastfile:"
-          sed -n '1,200p' fastlane/Fastfile || true
 
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
@@ -110,22 +90,16 @@ FASTFILE
       - name: Install Fastlane
         run: |
           gem install fastlane -v ">= 2.200" --no-document
-          echo "fastlane version:"
-          fastlane --version || true
-          echo "ruby version:"
-          ruby -v
 
-      - name: Run Fastlane uploading (verbose)
+      - name: Run Fastlane uploading
         shell: bash
         env:
           PACKAGE_NAME: ${{ github.event.inputs.package_name }}
           GOOGLE_PLAY_JSON_KEY: ${{ secrets.GOOGLE_PLAY_JSON_KEY }}
         run: |
-          echo "Before running fastlane, show fastlane folder again:"
-          ls -la fastlane || true
-          echo "Show Fastfile content:"
-          sed -n '1,200p' fastlane/Fastfile || true
-          echo "Running fastlane (verbose):"
-          set -x
-          fastlane --verbose android upload_to_alpha
-          set +x
+          if [ -z "${GOOGLE_PLAY_JSON_KEY}" ]; then
+            echo "GOOGLE_PLAY_JSON_KEY is empty — set secret in repository settings."
+            exit 1
+          fi
+          echo "Running fastlane android upload_to_alpha..."
+          fastlane android upload_to_alpha
