@@ -8,7 +8,7 @@ on:
         required: true
         default: '2.0.0'
       asset_pattern:
-        description: 'Filename or glob for the AAB asset (example: Tap.Shoot.Win_2.aab)'
+        description: 'Filename or glob for the AAB asset'
         required: true
         default: 'Tap.Shoot.Win_2.aab'
       package_name:
@@ -20,15 +20,12 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     env:
-      # repo secrets
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GOOGLE_PLAY_JSON_KEY: ${{ secrets.GOOGLE_PLAY_JSON_KEY }}
-      # fastlane / CI helpers
       CI: "true"
       FASTLANE_SKIP_UPDATE_CHECK: "true"
       FASTLANE_OPT_OUT_USAGE: "true"
       FASTLANE_DISABLE_COLORS: "true"
-      # package name passed to fastlane
       PACKAGE_NAME: ${{ github.event.inputs.package_name }}
 
     steps:
@@ -37,7 +34,7 @@ jobs:
 
       - name: Install GitHub CLI
         run: |
-          sudo apt-get update
+          sudo apt-get update -y
           sudo apt-get install -y gh
 
       - name: Download AAB from GitHub Release
@@ -51,14 +48,41 @@ jobs:
       - name: Ensure AAB was downloaded
         shell: bash
         run: |
-          echo "Checking build_output for .aab files..."
+          echo "Listing build_output:"
+          ls -la build_output || true
           if ! ls build_output/*.aab >/dev/null 2>&1; then
             echo "No AAB found in build_output — check the tag and asset_pattern"
-            ls -la build_output || true
             exit 1
           fi
           echo "AAB found:"
-          ls -la build_output
+          ls -la build_output/*.aab
+
+      - name: Create minimal fastlane/Fastfile
+        shell: bash
+        run: |
+          mkdir -p fastlane
+          cat > fastlane/Fastfile <<'FASTFILE'
+default_platform(:android)
+
+platform :android do
+  desc "Upload AAB from build_output to alpha using GOOGLE_PLAY_JSON_KEY"
+  lane :upload_to_alpha do
+    aab_path = Dir["build_output/*.aab"].first
+    if aab_path.nil?
+      UI.user_error!("No AAB found in build_output. Make sure the download step succeeded.")
+    end
+
+    supply(
+      aab: aab_path,
+      track: "alpha",
+      package_name: ENV["PACKAGE_NAME"],
+      json_key_data: ENV["GOOGLE_PLAY_JSON_KEY"]
+    )
+  end
+end
+FASTFILE
+          echo "Fastfile created:"
+          sed -n '1,200p' fastlane/Fastfile
 
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
@@ -72,15 +96,12 @@ jobs:
       - name: Run Fastlane uploading
         shell: bash
         env:
-          GOOGLE_PLAY_JSON_KEY: ${{ secrets.GOOGLE_PLAY_JSON_KEY }}
           PACKAGE_NAME: ${{ github.event.inputs.package_name }}
+          GOOGLE_PLAY_JSON_KEY: ${{ secrets.GOOGLE_PLAY_JSON_KEY }}
         run: |
           if [ -z "${GOOGLE_PLAY_JSON_KEY}" ]; then
-            echo "GOOGLE_PLAY_JSON_KEY secret is empty. Set it in repository secrets."
+            echo "GOOGLE_PLAY_JSON_KEY is empty — set secret in repository settings."
             exit 1
           fi
-          echo "Running fastlane android upload_to_alpha (non-interactive)..."
+          echo "Running fastlane android upload_to_alpha..."
           fastlane android upload_to_alpha
-
-      - name: Post Checkout
-        run: echo "done"
