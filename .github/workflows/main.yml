@@ -2,32 +2,60 @@ name: Push new version to Internal
 
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to download'
+        required: true
+        default: '2.0.0'
+      asset_pattern:
+        description: 'Glob pattern for the AAB asset (example: *Tap.Shoot.Win_2.aab)'
+        required: true
+        default: '*Tap.Shoot.Win_2.aab'
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GOOGLE_PLAY_JSON_KEY: ${{ secrets.GOOGLE_PLAY_JSON_KEY }}
     steps:
       - name: Checkout
         uses: actions/checkout@v3
 
+      - name: Install GitHub CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gh
+
       - name: Download AAB from GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
         run: |
           mkdir -p build_output
-          gh release download 2.0.0 \ #TAG OF VERSION FROM RELEASES
-            --pattern "*Tap.Shoot.Win_2.aab" \
+          gh release download "${{ github.event.inputs.tag }}" \
+            --pattern "${{ github.event.inputs.asset_pattern }}" \
             --dir build_output
+
+      - name: Ensure AAB was downloaded
+        shell: bash
+        run: |
+          if ! ls build_output/*.aab >/dev/null 2>&1; then
+            echo "No AAB found in build_output — check the tag and asset_pattern"
+            ls -la build_output || true
+            exit 1
+          fi
+          echo "AAB found:"
+          ls -la build_output
 
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: 3.1
-          
+
       - name: Install Fastlane
         run: gem install fastlane
 
       - name: Run Fastlane uploading
+        shell: bash
         env:
           GOOGLE_PLAY_JSON_KEY: ${{ secrets.GOOGLE_PLAY_JSON_KEY }}
         run: |
